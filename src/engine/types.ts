@@ -59,8 +59,12 @@ export interface Position {
 export const MIN_BPM = 20;
 export const MAX_BPM = 400;
 
+export function clamp(v: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, v));
+}
+
 export function clampBpm(bpm: number): number {
-  return Math.min(MAX_BPM, Math.max(MIN_BPM, Math.round(bpm)));
+  return clamp(Math.round(bpm), MIN_BPM, MAX_BPM);
 }
 
 export function defaultConfig(): MetronomeConfig {

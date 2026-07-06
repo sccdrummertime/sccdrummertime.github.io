@@ -20,13 +20,19 @@ const TABS: { id: Tab; icon: string; label: string }[] = [
 /** While the app is open, fire enabled reminders at their set time. */
 function useReminderClock() {
   useEffect(() => {
-    const fired = new Set<string>();
+    let fired = new Set<string>();
+    let firedDay = new Date().toDateString();
     const check = () => {
       const { reminders } = useSettings.getState();
       const now = new Date();
+      if (now.toDateString() !== firedDay) {
+        // new day — yesterday's fired keys can never match again, drop them
+        fired = new Set();
+        firedDay = now.toDateString();
+      }
       const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       for (const r of reminders) {
-        const key = `${r.id}-${now.toDateString()}-${r.time}`;
+        const key = `${r.id}-${r.time}`;
         if (!r.enabled || r.time !== hhmm || fired.has(key)) continue;
         fired.add(key);
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {

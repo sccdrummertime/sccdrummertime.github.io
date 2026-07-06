@@ -108,6 +108,7 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
 
   const q = query.trim().toLowerCase();
   const filtered = q ? songs.filter((s) => s.name.toLowerCase().includes(q)) : songs;
+  const songById = new Map(songs.map((s) => [s.id!, s]));
 
   return (
     <div className="screen">
@@ -184,7 +185,7 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
               </div>
               {sl.songIds.length === 0 && <div className="sub">Empty — add songs from the list above.</div>}
               {sl.songIds.map((id, i) => {
-                const song = songs.find((s) => s.id === id);
+                const song = songById.get(id);
                 if (!song) return null;
                 return (
                   <div className="list-item" key={id}>

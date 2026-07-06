@@ -74,4 +74,32 @@ describe('export/import round trip', () => {
     expect(result.songs).toBe(1);
     expect(result.skipped).toBe(1);
   });
+
+  it('keeps setlist references correct when song names collide', async () => {
+    await db.songs.add({ ...validSong, name: 'Same', bpm: 100, createdAt: 1 } as never);
+    const id2 = await db.songs.add({ ...validSong, name: 'Same', bpm: 200, createdAt: 2 } as never);
+    await db.setlists.add({ name: 'Gig', songIds: [id2], createdAt: 1 });
+    const json = await exportLibrary();
+
+    await db.songs.clear();
+    await db.setlists.clear();
+    await importLibrary(json);
+    const setlist = (await db.setlists.toArray())[0];
+    const referenced = await db.songs.get(setlist.songIds[0]);
+    expect(referenced?.bpm).toBe(200); // must point at the 200 BPM one, not the name-twin
+  });
+
+  it('drops setlist references to songs that failed validation, without shifting others', async () => {
+    const json = JSON.stringify({
+      app: 'open-metronome',
+      schemaVersion: 1,
+      songs: [{ name: 'Bad', bpm: 'x' }, validSong],
+      setlists: [{ name: 'Gig', songIndexes: [0, 1] }],
+    });
+    await importLibrary(json);
+    const setlist = (await db.setlists.toArray())[0];
+    expect(setlist.songIds).toHaveLength(1);
+    const referenced = await db.songs.get(setlist.songIds[0]);
+    expect(referenced?.name).toBe('Take Five');
+  });
 });

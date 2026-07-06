@@ -13,13 +13,14 @@ export interface LibraryExport {
   schemaVersion: number;
   exportedAt: string;
   songs: Song[];
-  setlists: { name: string; songNames: string[] }[];
+  /** setlists reference songs by index into the songs array — names may collide */
+  setlists: { name: string; songIndexes: number[] }[];
 }
 
 export async function exportLibrary(): Promise<string> {
   const songs = await db.songs.toArray();
   const setlists = await db.setlists.toArray();
-  const byId = new Map(songs.map((s) => [s.id!, s.name]));
+  const indexById = new Map(songs.map((s, i) => [s.id!, i]));
   const data: LibraryExport = {
     app: 'open-metronome',
     schemaVersion: SCHEMA_VERSION,
@@ -27,7 +28,9 @@ export async function exportLibrary(): Promise<string> {
     songs: songs.map(({ id: _id, ...rest }) => rest),
     setlists: setlists.map((sl) => ({
       name: sl.name,
-      songNames: sl.songIds.map((id) => byId.get(id)).filter((n): n is string => !!n),
+      songIndexes: sl.songIds
+        .map((id) => indexById.get(id))
+        .filter((i): i is number => i !== undefined),
     })),
   };
   return JSON.stringify(data, null, 2);
@@ -92,25 +95,25 @@ export async function importLibrary(json: string): Promise<ImportResult> {
   }
   const rawSongs = Array.isArray(data.songs) ? data.songs : [];
   let skipped = 0;
-  const clean = rawSongs
-    .map((s) => {
-      const ok = sanitizeSong(s);
-      if (!ok) skipped++;
-      return ok;
-    })
-    .filter((s): s is Omit<Song, 'id'> => s !== null);
+  const cleanByIndex = rawSongs.map((s) => {
+    const ok = sanitizeSong(s);
+    if (!ok) skipped++;
+    return ok;
+  });
 
-  const nameToId = new Map<string, number>();
+  // index in the export's songs array → new db id (only for songs that passed validation)
+  const idByIndex = new Map<number, number>();
   await db.transaction('rw', db.songs, db.setlists, async () => {
-    for (const song of clean) {
-      const id = await db.songs.add(song as Song);
-      nameToId.set(song.name, id);
+    for (let i = 0; i < rawSongs.length; i++) {
+      const song = cleanByIndex[i];
+      if (!song) continue;
+      idByIndex.set(i, await db.songs.add(song as Song));
     }
     const rawSetlists = Array.isArray(data.setlists) ? data.setlists : [];
     for (const sl of rawSetlists) {
-      if (!isRecord(sl) || typeof sl.name !== 'string' || !Array.isArray(sl.songNames)) continue;
-      const songIds = sl.songNames
-        .map((n) => nameToId.get(n as string))
+      if (!isRecord(sl) || typeof sl.name !== 'string' || !Array.isArray(sl.songIndexes)) continue;
+      const songIds = sl.songIndexes
+        .map((i) => (Number.isInteger(i) ? idByIndex.get(i as number) : undefined))
         .filter((id): id is number => id !== undefined);
       await db.setlists.add({
         name: sl.name.trim().slice(0, 200),
@@ -120,5 +123,5 @@ export async function importLibrary(json: string): Promise<ImportResult> {
     }
   });
   const setlistCount = Array.isArray(data.setlists) ? data.setlists.length : 0;
-  return { songs: clean.length, setlists: setlistCount, skipped };
+  return { songs: idByIndex.size, setlists: setlistCount, skipped };
 }

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { clamp } from '../engine/types';
 
 export interface Reminder {
   id: string;
@@ -35,7 +36,7 @@ export const useSettings = create<SettingsState>()(
       setTheme: (theme) => set({ theme }),
       setScreenFlash: (screenFlash) => set({ screenFlash }),
       setAutoDetectPractice: (autoDetectPractice) => set({ autoDetectPractice }),
-      setA4: (a4) => set({ a4: Math.min(466, Math.max(415, a4)) }),
+      setA4: (a4) => set({ a4: clamp(a4, 415, 466) }),
       addReminder: (r) => set((s) => ({ reminders: [...s.reminders, r] })),
       updateReminder: (id, patch) =>
         set((s) => ({

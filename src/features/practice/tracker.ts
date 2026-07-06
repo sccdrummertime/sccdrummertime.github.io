@@ -40,7 +40,13 @@ async function finalize(p: Pending): Promise<void> {
       auto: true,
     });
   }
-  savePending({ spans: [] });
+  // remove only the spans we consumed — a span recorded while the db writes above
+  // were in flight must not be wiped
+  const consumed = new Set(p.spans.map((s) => `${s.start}-${s.end}`));
+  const cur = loadPending();
+  cur.spans = cur.spans.filter((s) => !consumed.has(`${s.start}-${s.end}`));
+  if (cur.spans.length === 0) cur.songName = undefined;
+  savePending(cur);
 }
 
 /** Flush the pending buffer if the last activity is old enough to be over. */
@@ -71,8 +77,13 @@ export function trackerOnStop(): void {
   runStart = null;
 }
 
-/** Call once at app startup: sweeps leftovers from previous visits, then keeps sweeping. */
+let initialized = false;
+
+/** Call at app startup (idempotent — StrictMode double-mount must not create two
+ *  sweep intervals): sweeps leftovers from previous visits, then keeps sweeping. */
 export function initTracker(): void {
+  if (initialized) return;
+  initialized = true;
   void flushStalePending();
   setInterval(() => void flushStalePending(), 60_000);
 }

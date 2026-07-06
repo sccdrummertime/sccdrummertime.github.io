@@ -51,8 +51,14 @@ export const useMetro = create<MetroState>((set, get) => ({
 
 metronome.onStateChange = (running) => {
   useMetro.setState({ running });
-  if (useSettings.getState().autoDetectPractice) {
-    if (running) trackerOnStart(useMetro.getState().loadedSongName ?? undefined);
-    else trackerOnStop();
+  if (running) {
+    // starting a tracked run is gated on the setting...
+    if (useSettings.getState().autoDetectPractice) {
+      trackerOnStart(useMetro.getState().loadedSongName ?? undefined);
+    }
+  } else {
+    // ...but a stop always closes any open run (no-op if none) — otherwise toggling
+    // the setting off mid-run would orphan the span
+    trackerOnStop();
   }
 };

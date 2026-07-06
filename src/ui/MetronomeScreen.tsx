@@ -4,7 +4,7 @@ import { useSettings } from '../state/settings';
 import { cycleAccent } from '../engine/patterns';
 import { CLICK_SOUNDS } from '../engine/sounds';
 import { TapTempo } from '../engine/tapTempo';
-import { clampBpm, type Subdivision } from '../engine/types';
+import { clamp, clampBpm, type Subdivision } from '../engine/types';
 
 const SIGNATURES: [number, 2 | 4 | 8 | 16][] = [
   [2, 4],
@@ -178,7 +178,7 @@ export function MetronomeScreen() {
               max={32}
               value={config.signature.beats}
               onChange={(e) => {
-                const b = Math.min(32, Math.max(1, Number(e.target.value) || 1));
+                const b = clamp(Number(e.target.value) || 1, 1, 32);
                 setSignature(b, config.signature.unit);
               }}
             />
@@ -297,7 +297,7 @@ export function MetronomeScreen() {
                       update({
                         trainer: {
                           ...config.trainer,
-                          randomChance: Math.min(0.9, Math.max(0, Number(e.target.value) / 100)),
+                          randomChance: clamp(Number(e.target.value) / 100, 0, 0.9),
                         },
                       })
                     }

@@ -23,13 +23,11 @@ function Stopwatch() {
 
   const stop = async (log: boolean) => {
     setRunning(false);
-    if (log && elapsed >= 10) {
-      await db.sessions.add({
-        startedAt,
-        endedAt: Date.now(),
-        durationSec: elapsed,
-        auto: false,
-      });
+    const endedAt = Date.now();
+    // duration from timestamps, not the display state — the 250ms render tick lags
+    const durationSec = Math.round((endedAt - startedAt) / 1000);
+    if (log && durationSec >= 10) {
+      await db.sessions.add({ startedAt, endedAt, durationSec, auto: false });
     }
     setElapsed(0);
   };

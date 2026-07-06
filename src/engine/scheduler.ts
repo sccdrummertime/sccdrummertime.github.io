@@ -53,6 +53,12 @@ export class Metronome {
     if (this.master && patch.volume !== undefined) {
       this.master.gain.setTargetAtTime(patch.volume, this.ctx!.currentTime, 0.02);
     }
+    // a pending auto-stop is stale the moment auto-stop settings change — cancel it
+    // and let the next scheduleAhead() re-evaluate against the new config
+    if (patch.autoStop !== undefined && this.stopTimer) {
+      clearTimeout(this.stopTimer);
+      this.stopTimer = null;
+    }
   }
 
   private ensureAudio(): AudioContext {
@@ -110,6 +116,11 @@ export class Metronome {
     if (!this.running || !this.ctx || !this.master) return;
     const ctx = this.ctx;
     const cfg = this.config;
+    // the rAF visual loop is paused while the tab is hidden — prune stale visual
+    // events here (this runs off the worker) so the queue can't grow unbounded
+    while (this.queue.length && this.queue[0].time < ctx.currentTime - 0.1) {
+      this.queue.shift();
+    }
     while (this.nextNoteTime < ctx.currentTime + LOOKAHEAD_S) {
       // auto-stop checks happen at the click that would cross the limit
       if (cfg.autoStop.enabled) {

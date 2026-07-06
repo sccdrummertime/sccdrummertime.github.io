@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { usePitch } from '../features/tuner/usePitch';
 import { useSettings } from '../state/settings';
+import { clamp } from '../engine/types';
 
 export function TunerScreen() {
   const [active, setActive] = useState(false);
@@ -33,7 +34,7 @@ export function TunerScreen() {
         <div className="center" />
         <div
           className={`needle${inTune ? ' in-tune' : ''}`}
-          style={{ left: `${Math.min(98, Math.max(2, needleLeft))}%` }}
+          style={{ left: `${clamp(needleLeft, 2, 98)}%` }}
         />
       </div>
       <div className="row spread" style={{ padding: '0 8px' }}>
