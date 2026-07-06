@@ -14,6 +14,20 @@ export function clickInterval(bpm: number, subdivision: Subdivision): number {
   return 60 / bpm / subdivision;
 }
 
+/** Grace window (seconds) for a scheduled click that is marginally late — still
+ *  worth firing rather than dropping. */
+export const SCHEDULE_GRACE_S = 0.005;
+
+/** True when a click's scheduled time has already passed (beyond the grace
+ *  window). If the scheduler wakes late — a GC pause, a heavy render, the tab
+ *  waking — such backlogged clicks must be skipped, not fired: Web Audio plays a
+ *  past-dated source immediately, so dumping the backlog makes every missed
+ *  click sound at once (a "drill" burst whose fused envelopes read as a low
+ *  buzz) instead of a steady pulse. */
+export function isPastDue(noteTime: number, now: number, grace = SCHEDULE_GRACE_S): boolean {
+  return noteTime < now - grace;
+}
+
 /** [upper bound (inclusive), name] — standard classical tempo ranges. */
 const TEMPO_MARKINGS: [number, string][] = [
   [40, 'Grave'],

@@ -1,6 +1,6 @@
 import type { AccentState, MetronomeConfig, Position } from './types';
 import { defaultConfig } from './types';
-import { advancePosition, clickInterval, incrementalBpm, isMuted } from './patterns';
+import { advancePosition, clickInterval, incrementalBpm, isMuted, isPastDue } from './patterns';
 import { scheduleClick } from './sounds';
 
 export interface BeatEvent {
@@ -199,6 +199,11 @@ export class Metronome {
     while (this.queue.length && this.queue[0].time < ctx.currentTime - 0.1) {
       this.queue.shift();
     }
+    // A large backlog (long stall/background) would make the skip-loop below spin
+    // over thousands of past beats — hard-resync just ahead of the clock instead.
+    if (this.nextNoteTime < ctx.currentTime - 0.5) {
+      this.nextNoteTime = ctx.currentTime + 0.06;
+    }
     while (this.nextNoteTime < ctx.currentTime + LOOKAHEAD_S) {
       // auto-stop checks happen at the click that would cross the limit
       if (cfg.autoStop.enabled) {
@@ -215,10 +220,17 @@ export class Metronome {
       const accent: AccentState = cfg.accents[this.pos.beat] ?? 'normal';
       const isSub = this.pos.sub > 0;
       const muted = isMuted(cfg.trainer, this.pos);
-      if (!muted) {
-        scheduleClick(ctx, this.master, cfg.sound, accent, isSub, this.nextNoteTime);
+      // If we woke late, this click's time is already past. Firing it now (Web
+      // Audio plays past-dated sources immediately) would dump the whole backlog
+      // as one burst — the "drill"/pitch-drop artifact. Silently skip it and let
+      // the pulse resume on the next in-time click; position still advances so
+      // the accent pattern stays phase-aligned.
+      if (!isPastDue(this.nextNoteTime, ctx.currentTime)) {
+        if (!muted) {
+          scheduleClick(ctx, this.master, cfg.sound, accent, isSub, this.nextNoteTime);
+        }
+        this.queue.push({ time: this.nextNoteTime, pos: this.pos, accent, isSub, muted, bpm });
       }
-      this.queue.push({ time: this.nextNoteTime, pos: this.pos, accent, isSub, muted, bpm });
       this.nextNoteTime += clickInterval(bpm, cfg.subdivision);
       this.pos = advancePosition(this.pos, cfg.signature, cfg.subdivision);
     }

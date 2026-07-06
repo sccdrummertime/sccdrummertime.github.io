@@ -6,6 +6,7 @@ import {
   defaultAccents,
   incrementalBpm,
   isMuted,
+  isPastDue,
   tempoMarking,
 } from './patterns';
 import { TapTempo } from './tapTempo';
@@ -135,6 +136,21 @@ describe('tempoMarking', () => {
     expect(tempoMarking(120)).toBe('Allegretto');
     expect(tempoMarking(140)).toBe('Allegro');
     expect(tempoMarking(240)).toBe('Prestissimo');
+  });
+});
+
+describe('isPastDue', () => {
+  it('fires clicks scheduled now or in the near future', () => {
+    expect(isPastDue(10, 10)).toBe(false);
+    expect(isPastDue(10.5, 10)).toBe(false);
+  });
+  it('tolerates a marginally-late click within the grace window', () => {
+    expect(isPastDue(9.998, 10)).toBe(false); // 2ms late, still worth firing
+  });
+  it('skips a click whose time is clearly in the past (the catch-up-burst guard)', () => {
+    expect(isPastDue(9.5, 10)).toBe(true);
+    expect(isPastDue(0, 10)).toBe(true);
+    expect(isPastDue(-0.7, 10)).toBe(true); // negative time would throw in Web Audio
   });
 });
 
