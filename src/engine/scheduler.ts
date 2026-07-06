@@ -76,9 +76,52 @@ export class Metronome {
     }
   }
 
+  /** iOS suspends the audio session on screen lock and leaves the context
+   *  "interrupted" on unlock — nothing un-mutes automatically. Whenever the page
+   *  comes back (or the user touches anywhere) while we're supposed to be
+   *  running, resume the context, restart the media route, and continue on the
+   *  next beat. */
+  private installReviveHandlers(): void {
+    if (typeof document === 'undefined') return;
+    const revive = () => {
+      if (this.running) void this.reviveAudio();
+    };
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') revive();
+    });
+    window.addEventListener('focus', revive);
+    window.addEventListener('pageshow', revive);
+    // resume() outside a gesture can be refused — any tap is also a chance to revive
+    document.addEventListener('pointerdown', () => {
+      if (this.running && this.ctx && this.ctx.state !== 'running') revive();
+    });
+  }
+
+  private async reviveAudio(): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (ctx.state !== 'running') {
+      try {
+        await ctx.resume();
+      } catch {
+        return; // no gesture available yet — the pointerdown handler will retry
+      }
+    }
+    if (this.mediaOut && this.mediaOut.paused) {
+      this.mediaOut.play().catch(() => {});
+    }
+    // drop the stale backlog and pick up cleanly just ahead of the clock
+    this.queue = [];
+    if (this.nextNoteTime < ctx.currentTime) {
+      this.nextNoteTime = ctx.currentTime + 0.06;
+    }
+    this.scheduleAhead();
+  }
+
   private ensureAudio(): AudioContext {
     if (!this.ctx) {
       this.ctx = new AudioContext({ latencyHint: 'interactive' });
+      this.installReviveHandlers();
       this.master = this.ctx.createGain();
       this.master.gain.value = this.config.volume;
       if (isIOS() && typeof Audio !== 'undefined' && this.ctx.createMediaStreamDestination) {
