@@ -296,6 +296,33 @@ label.toggle {
   opacity: 1;
 }
 
+/* setlist transport */
+.transport {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.transport-info {
+  min-width: 0;
+}
+
+/* drag-to-reorder handle */
+.drag-handle {
+  touch-action: none; /* the handle drags the row, never scrolls the page */
+  cursor: grab;
+  font-size: 18px;
+  padding: 8px 12px;
+  user-select: none;
+}
+
+.list-item.dragging {
+  background: var(--accent-soft);
+  border-radius: 10px;
+}
+
 /* library */
 .list-item {
   display: flex;

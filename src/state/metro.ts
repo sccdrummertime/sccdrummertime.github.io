@@ -15,6 +15,15 @@ export interface SongDraft {
   name: string;
 }
 
+/** Non-null while playing through a setlist: the metronome screen shows
+ *  prev/pause/next transport for it. Songs are snapshotted at play time so
+ *  later library edits don't yank settings mid-gig. */
+export interface ActiveSetlist {
+  name: string;
+  songs: Song[];
+  index: number;
+}
+
 /** One engine instance for the whole app; this store mirrors its config so React
  *  re-renders, and every write goes through to the engine live. */
 export const metronome = new Metronome();
@@ -32,13 +41,18 @@ interface MetroState {
   running: boolean;
   loadedSongName: string | null;
   songDraft: SongDraft | null;
+  activeSetlist: ActiveSetlist | null;
   update: (patch: Partial<MetronomeConfig>) => void;
   setSignature: (beats: number, unit: 2 | 4 | 8 | 16) => void;
   setLoadedSong: (name: string | null) => void;
+  applySong: (song: Song) => void;
   beginNewSong: (name: string) => void;
   beginEditSong: (song: Song) => void;
   cancelSongDraft: () => void;
   clearSongDraft: () => void;
+  playSetlist: (name: string, songs: Song[], index: number) => void;
+  setlistGo: (delta: -1 | 1) => void;
+  exitSetlist: () => void;
   start: () => void;
   stop: () => void;
   toggle: () => void;
@@ -49,6 +63,7 @@ export const useMetro = create<MetroState>((set, get) => ({
   running: false,
   loadedSongName: null,
   songDraft: null,
+  activeSetlist: null,
   update: (patch) => {
     metronome.setConfig(patch);
     set({ config: metronome.getConfig() });
@@ -59,13 +74,7 @@ export const useMetro = create<MetroState>((set, get) => ({
     get().update({ signature: { beats, unit }, accents });
   },
   setLoadedSong: (loadedSongName) => set({ loadedSongName }),
-  beginNewSong: (name) => {
-    if (get().running) get().stop();
-    get().update(defaultConfig());
-    set({ loadedSongName: name, songDraft: { mode: 'create', name } });
-  },
-  beginEditSong: (song) => {
-    if (get().running) get().stop();
+  applySong: (song) => {
     get().update({
       bpm: song.bpm,
       signature: song.signature,
@@ -73,10 +82,40 @@ export const useMetro = create<MetroState>((set, get) => ({
       accents: song.accents,
       sound: song.sound,
     });
-    set({ loadedSongName: song.name, songDraft: { mode: 'edit', id: song.id, name: song.name } });
+    set({ loadedSongName: song.name });
+  },
+  beginNewSong: (name) => {
+    if (get().running) get().stop();
+    get().update(defaultConfig());
+    set({ loadedSongName: name, songDraft: { mode: 'create', name }, activeSetlist: null });
+  },
+  beginEditSong: (song) => {
+    if (get().running) get().stop();
+    get().applySong(song);
+    set({ songDraft: { mode: 'edit', id: song.id, name: song.name }, activeSetlist: null });
   },
   cancelSongDraft: () => set({ songDraft: null, loadedSongName: null }),
   clearSongDraft: () => set({ songDraft: null }),
+  playSetlist: (name, songs, index) => {
+    if (songs.length === 0) return;
+    const i = Math.min(Math.max(index, 0), songs.length - 1);
+    get().applySong(songs[i]);
+    set({ activeSetlist: { name, songs, index: i }, songDraft: null });
+    void metronome.start();
+  },
+  setlistGo: (delta) => {
+    const sl = get().activeSetlist;
+    if (!sl) return;
+    const i = sl.index + delta;
+    if (i < 0 || i >= sl.songs.length) return;
+    const wasRunning = get().running;
+    if (wasRunning) get().stop();
+    get().applySong(sl.songs[i]);
+    set({ activeSetlist: { ...sl, index: i } });
+    // restart so the new song begins on beat 1 rather than mid-bar
+    if (wasRunning) void metronome.start();
+  },
+  exitSetlist: () => set({ activeSetlist: null }),
   start: () => void metronome.start(),
   stop: () => metronome.stop(),
   toggle: () => metronome.toggle(),

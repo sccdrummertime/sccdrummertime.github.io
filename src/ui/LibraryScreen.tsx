@@ -2,14 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { db, type Setlist, type Song } from '../db/db';
 import { exportLibrary, importLibrary } from '../db/transfer';
 import { useMetro } from '../state/metro';
+import { SetlistDetail } from './SetlistDetail';
 
 export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) {
   const [songs, setSongs] = useState<Song[]>([]);
   const [setlists, setSetlists] = useState<Setlist[]>([]);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<string | null>(null);
+  const [openSetlistId, setOpenSetlistId] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const { update, setLoadedSong, beginNewSong, beginEditSong } = useMetro();
+  const { applySong, beginNewSong, beginEditSong } = useMetro();
 
   const refresh = async () => {
     setSongs(await db.songs.orderBy('name').toArray());
@@ -17,7 +19,7 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
   };
   useEffect(() => {
     void refresh();
-  }, []);
+  }, [openSetlistId]);
 
   const newSong = () => {
     const name = prompt('Song name?');
@@ -32,14 +34,8 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
   };
 
   const loadSong = (song: Song) => {
-    update({
-      bpm: song.bpm,
-      signature: song.signature,
-      subdivision: song.subdivision,
-      accents: song.accents,
-      sound: song.sound,
-    });
-    setLoadedSong(song.name);
+    useMetro.getState().exitSetlist();
+    applySong(song);
     goToMetronome();
   };
 
@@ -58,40 +54,8 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
   const createSetlist = async () => {
     const name = prompt('Setlist name?');
     if (!name?.trim()) return;
-    await db.setlists.add({ name: name.trim(), songIds: [], createdAt: Date.now() });
-    await refresh();
-  };
-
-  const addToSetlist = async (song: Song) => {
-    if (setlists.length === 0) {
-      setStatus('Create a setlist first.');
-      return;
-    }
-    const names = setlists.map((s, i) => `${i + 1}. ${s.name}`).join('\n');
-    const pick = prompt(`Add to which setlist?\n${names}\n\nEnter number:`);
-    const idx = Number(pick) - 1;
-    const sl = setlists[idx];
-    if (!sl) return;
-    if (!sl.songIds.includes(song.id!)) {
-      await db.setlists.update(sl.id!, { songIds: [...sl.songIds, song.id!] });
-      await refresh();
-      setStatus(`Added to “${sl.name}”.`);
-    }
-  };
-
-  const moveInSetlist = async (sl: Setlist, index: number, delta: -1 | 1) => {
-    const target = index + delta;
-    if (target < 0 || target >= sl.songIds.length) return;
-    const songIds = [...sl.songIds];
-    [songIds[index], songIds[target]] = [songIds[target], songIds[index]];
-    await db.setlists.update(sl.id!, { songIds });
-    await refresh();
-  };
-
-  const removeFromSetlist = async (sl: Setlist, index: number) => {
-    const songIds = sl.songIds.filter((_, i) => i !== index);
-    await db.setlists.update(sl.id!, { songIds });
-    await refresh();
+    const id = await db.setlists.add({ name: name.trim(), songIds: [], createdAt: Date.now() });
+    setOpenSetlistId(id); // jump straight in so songs can be added immediately
   };
 
   const doExport = async () => {
@@ -117,9 +81,18 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
     }
   };
 
+  if (openSetlistId !== null) {
+    return (
+      <SetlistDetail
+        setlistId={openSetlistId}
+        goBack={() => setOpenSetlistId(null)}
+        goToMetronome={goToMetronome}
+      />
+    );
+  }
+
   const q = query.trim().toLowerCase();
   const filtered = q ? songs.filter((s) => s.name.toLowerCase().includes(q)) : songs;
-  const songById = new Map(songs.map((s) => [s.id!, s]));
 
   return (
     <div className="screen">
@@ -145,6 +118,49 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
       </div>
       {status && <div className="muted-note">{status}</div>}
 
+      {setlists.length > 0 && (
+        <>
+          <h2 className="screen-title" style={{ marginTop: 12 }}>
+            Setlists
+          </h2>
+          {setlists.map((sl) => (
+            <div
+              className="list-item"
+              key={sl.id}
+              style={{ cursor: 'pointer' }}
+              onClick={() => setOpenSetlistId(sl.id!)}
+            >
+              <div>
+                <div>{sl.name}</div>
+                <div className="meta">
+                  {sl.songIds.length} song{sl.songIds.length === 1 ? '' : 's'}
+                </div>
+              </div>
+              <div className="row" style={{ margin: 0 }}>
+                <button onClick={(e) => { e.stopPropagation(); setOpenSetlistId(sl.id!); }}>
+                  Open
+                </button>
+                <button
+                  className="ghost"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    if (confirm(`Delete setlist “${sl.name}”?`)) {
+                      await db.setlists.delete(sl.id!);
+                      await refresh();
+                    }
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      <h2 className="screen-title" style={{ marginTop: 12 }}>
+        Songs
+      </h2>
       <input
         className="search"
         placeholder="Search songs…"
@@ -152,7 +168,7 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
         onChange={(e) => setQuery(e.target.value)}
       />
 
-      {filtered.length === 0 && <div className="sub">No songs yet. Tap “+ New song” to create one.</div>}
+      {filtered.length === 0 && <div className="sub">No songs yet. Tap “+ Add new song” to create one.</div>}
       {filtered.map((song) => (
         <div className="list-item" key={song.id}>
           <div>
@@ -166,75 +182,12 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
               Load
             </button>
             <button onClick={() => editSong(song)}>Edit</button>
-            <button onClick={() => void addToSetlist(song)}>+ Setlist</button>
             <button className="ghost" onClick={() => void deleteSong(song)}>
               ✕
             </button>
           </div>
         </div>
       ))}
-
-      {setlists.length > 0 && (
-        <>
-          <h2 className="screen-title" style={{ marginTop: 20 }}>
-            Setlists
-          </h2>
-          {setlists.map((sl) => (
-            <div className="card" key={sl.id}>
-              <div className="row spread" style={{ margin: 0 }}>
-                <h3>{sl.name}</h3>
-                <button
-                  className="ghost"
-                  onClick={async () => {
-                    if (confirm(`Delete setlist “${sl.name}”?`)) {
-                      await db.setlists.delete(sl.id!);
-                      await refresh();
-                    }
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-              {sl.songIds.length === 0 && <div className="sub">Empty — add songs from the list above.</div>}
-              {sl.songIds.map((id, i) => {
-                const song = songById.get(id);
-                if (!song) return null;
-                return (
-                  <div className="list-item" key={`${id}-${i}`}>
-                    <div>
-                      {i + 1}. {song.name} <span className="meta">{song.bpm} BPM</span>
-                    </div>
-                    <div className="row" style={{ margin: 0 }}>
-                      <button
-                        aria-label={`Move ${song.name} up`}
-                        disabled={i === 0}
-                        onClick={() => void moveInSetlist(sl, i, -1)}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        aria-label={`Move ${song.name} down`}
-                        disabled={i === sl.songIds.length - 1}
-                        onClick={() => void moveInSetlist(sl, i, 1)}
-                      >
-                        ↓
-                      </button>
-                      <button onClick={() => loadSong(song)}>Load</button>
-                      <button
-                        className="ghost"
-                        aria-label={`Remove ${song.name} from ${sl.name}`}
-                        onClick={() => void removeFromSetlist(sl, i)}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </>
-      )}
     </div>
   );
 }

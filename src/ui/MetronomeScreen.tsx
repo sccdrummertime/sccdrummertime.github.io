@@ -28,7 +28,8 @@ const SUBDIVISIONS: { value: Subdivision; label: string }[] = [
 const tapper = new TapTempo();
 
 export function MetronomeScreen({ goToLibrary }: { goToLibrary: () => void }) {
-  const { config, running, loadedSongName, songDraft, update, setSignature, toggle } = useMetro();
+  const { config, running, loadedSongName, songDraft, activeSetlist, update, setSignature, toggle } =
+    useMetro();
   const screenFlash = useSettings((s) => s.screenFlash);
   const [activeBeat, setActiveBeat] = useState<number | null>(null);
   const [liveBpm, setLiveBpm] = useState<number | null>(null);
@@ -103,6 +104,43 @@ export function MetronomeScreen({ goToLibrary }: { goToLibrary: () => void }) {
             </button>
             <button className="primary" onClick={() => void saveDraft()}>
               Save song
+            </button>
+          </div>
+        </div>
+      ) : activeSetlist ? (
+        <div className="card transport">
+          <div className="transport-info">
+            <div className="meta">
+              {activeSetlist.name} · {activeSetlist.index + 1}/{activeSetlist.songs.length}
+            </div>
+            <div>
+              <strong>{activeSetlist.songs[activeSetlist.index].name}</strong>
+            </div>
+          </div>
+          <div className="row" style={{ margin: 0 }}>
+            <button
+              aria-label="Previous song"
+              disabled={activeSetlist.index === 0}
+              onClick={() => useMetro.getState().setlistGo(-1)}
+            >
+              ⏮
+            </button>
+            <button aria-label={running ? 'Pause' : 'Play'} className="primary" onClick={toggle}>
+              {running ? '⏸' : '▶'}
+            </button>
+            <button
+              aria-label="Next song"
+              disabled={activeSetlist.index === activeSetlist.songs.length - 1}
+              onClick={() => useMetro.getState().setlistGo(1)}
+            >
+              ⏭
+            </button>
+            <button
+              className="ghost"
+              aria-label="Exit setlist"
+              onClick={() => useMetro.getState().exitSetlist()}
+            >
+              ✕
             </button>
           </div>
         </div>
