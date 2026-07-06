@@ -6,6 +6,7 @@ import {
   defaultAccents,
   incrementalBpm,
   isMuted,
+  tempoMarking,
 } from './patterns';
 import { TapTempo } from './tapTempo';
 import type { IncrementalTempo, MutedTrainer, Position } from './types';
@@ -123,6 +124,17 @@ describe('isMuted', () => {
   });
   it('disabled: never mutes', () => {
     expect(isMuted({ ...base, enabled: false }, { bar: 2, beat: 1, sub: 0 })).toBe(false);
+  });
+});
+
+describe('tempoMarking', () => {
+  it('maps bpm ranges to classical names', () => {
+    expect(tempoMarking(30)).toBe('Grave');
+    expect(tempoMarking(50)).toBe('Largo');
+    expect(tempoMarking(90)).toBe('Andante');
+    expect(tempoMarking(120)).toBe('Allegretto');
+    expect(tempoMarking(140)).toBe('Allegro');
+    expect(tempoMarking(240)).toBe('Prestissimo');
   });
 });
 

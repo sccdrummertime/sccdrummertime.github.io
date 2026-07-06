@@ -14,6 +14,28 @@ export function clickInterval(bpm: number, subdivision: Subdivision): number {
   return 60 / bpm / subdivision;
 }
 
+/** [upper bound (inclusive), name] — standard classical tempo ranges. */
+const TEMPO_MARKINGS: [number, string][] = [
+  [40, 'Grave'],
+  [60, 'Largo'],
+  [66, 'Larghetto'],
+  [76, 'Adagio'],
+  [108, 'Andante'],
+  [112, 'Moderato'],
+  [120, 'Allegretto'],
+  [156, 'Allegro'],
+  [176, 'Vivace'],
+  [200, 'Presto'],
+];
+
+/** Classical tempo marking for a BPM (Largo, Andante, Allegro…). */
+export function tempoMarking(bpm: number): string {
+  for (const [max, name] of TEMPO_MARKINGS) {
+    if (bpm <= max) return name;
+  }
+  return 'Prestissimo';
+}
+
 export function advancePosition(
   pos: Position,
   signature: TimeSignature,

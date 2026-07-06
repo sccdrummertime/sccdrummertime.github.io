@@ -15,12 +15,16 @@ export function SetlistDetail({ setlistId, goBack, goToMetronome }: Props) {
   const [pickQuery, setPickQuery] = useState('');
   const playSetlist = useMetro((s) => s.playSetlist);
 
-  // drag state — orderRef mirrors `order` so pointer handlers (which can fire
-  // against a stale render's closure) always read/persist the latest sequence
+  // drag state — DOM order stays fixed during a drag; the held row follows the
+  // finger via transform and the others slide aside with a transition. Only on
+  // release is the array actually reordered and persisted. Refs mirror state so
+  // window-level pointer handlers never read a stale closure.
   const listRef = useRef<HTMLDivElement>(null);
-  const dragIndexRef = useRef<number | null>(null);
+  const dragFromRef = useRef<number | null>(null); // where the held row started
+  const dragToRef = useRef<number>(0); // slot currently under the finger
+  const startYRef = useRef(0);
   const orderRef = useRef<number[]>([]);
-  const [dragging, setDragging] = useState(false);
+  const [drag, setDrag] = useState<{ from: number; to: number; offset: number } | null>(null);
   const [order, _setOrder] = useState<number[]>([]);
   const setOrder = (ids: number[]) => {
     orderRef.current = ids;
@@ -38,33 +42,37 @@ export function SetlistDetail({ setlistId, goBack, goToMetronome }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setlistId]);
 
-  /** Window-level drag listeners: a reorder re-keys the dragged row, so its
-   *  original DOM node (and any pointer capture on it) doesn't survive the swap —
-   *  only window reliably keeps receiving move/up. Must be registered before the
-   *  loading early-return below (hooks must run on every render). */
+  /** Window-level drag listeners (registered before the loading early-return —
+   *  hooks must run on every render; and window keeps receiving events no matter
+   *  what re-renders under the finger). */
   useEffect(() => {
     const move = (e: PointerEvent) => {
-      const from = dragIndexRef.current;
+      const from = dragFromRef.current;
       if (from === null || !listRef.current) return;
       const rows = listRef.current.children;
       if (rows.length === 0) return;
       const rect = listRef.current.getBoundingClientRect();
       const rowH = (rows[0] as HTMLElement).offsetHeight || 1;
-      const ids = orderRef.current;
-      const target = Math.min(ids.length - 1, Math.max(0, Math.floor((e.clientY - rect.top) / rowH)));
-      if (target !== from) {
-        const next = [...ids];
-        const [moved] = next.splice(from, 1);
-        next.splice(target, 0, moved);
-        setOrder(next);
-        dragIndexRef.current = target;
-      }
+      const to = Math.min(
+        orderRef.current.length - 1,
+        Math.max(0, Math.floor((e.clientY - rect.top) / rowH)),
+      );
+      dragToRef.current = to;
+      setDrag({ from, to, offset: e.clientY - startYRef.current });
     };
     const up = () => {
-      if (dragIndexRef.current === null) return;
-      dragIndexRef.current = null;
-      setDragging(false);
-      void db.setlists.update(setlistId, { songIds: orderRef.current });
+      const from = dragFromRef.current;
+      if (from === null) return;
+      const to = dragToRef.current;
+      dragFromRef.current = null;
+      setDrag(null);
+      if (to !== from) {
+        const next = [...orderRef.current];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        setOrder(next);
+        void db.setlists.update(setlistId, { songIds: next });
+      }
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -111,12 +119,29 @@ export function SetlistDetail({ setlistId, goBack, goToMetronome }: Props) {
   };
 
   /** Hold the ≡ handle and move: rows are uniform height, so the target slot is
-   *  simple pointer-Y arithmetic; the list live-reorders under the finger and
-   *  the result persists on release (window listeners above). */
+   *  simple pointer-Y arithmetic. During the drag the held row tracks the finger
+   *  and the others animate aside; release commits + persists (listeners above). */
   const onHandleDown = (index: number) => (e: React.PointerEvent) => {
     e.preventDefault();
-    dragIndexRef.current = index;
-    setDragging(true);
+    dragFromRef.current = index;
+    dragToRef.current = index;
+    startYRef.current = e.clientY;
+    setDrag({ from: index, to: index, offset: 0 });
+  };
+
+  /** Per-row transform while a drag is live: the held row follows the finger,
+   *  rows between the origin and target slot shift one row-height aside. */
+  const rowStyle = (i: number): React.CSSProperties | undefined => {
+    if (!drag || !listRef.current) return undefined;
+    const rowH = (listRef.current.children[0] as HTMLElement | undefined)?.offsetHeight ?? 0;
+    if (i === drag.from) return { transform: `translateY(${drag.offset}px)` };
+    if (drag.from < drag.to && i > drag.from && i <= drag.to) {
+      return { transform: `translateY(${-rowH}px)` };
+    }
+    if (drag.from > drag.to && i >= drag.to && i < drag.from) {
+      return { transform: `translateY(${rowH}px)` };
+    }
+    return undefined;
   };
 
   const q = pickQuery.trim().toLowerCase();
@@ -141,10 +166,11 @@ export function SetlistDetail({ setlistId, goBack, goToMetronome }: Props) {
           : `${songsInOrder.length} song${songsInOrder.length === 1 ? '' : 's'} · tap a song to play it · hold ≡ to reorder`}
       </div>
 
-      <div ref={listRef} style={{ marginTop: 8 }}>
+      <div ref={listRef} className="drag-list" style={{ marginTop: 8 }}>
         {songsInOrder.map((song, i) => (
           <div
-            className={`list-item${dragging && dragIndexRef.current === i ? ' dragging' : ''}`}
+            className={`list-item${drag?.from === i ? ' dragging' : ''}`}
+            style={rowStyle(i)}
             key={`${song.id}-${i}`}
           >
             <button

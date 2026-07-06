@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { onBeat, useMetro } from '../state/metro';
 import { useSettings } from '../state/settings';
-import { cycleAccent } from '../engine/patterns';
+import { cycleAccent, tempoMarking } from '../engine/patterns';
 import { CLICK_SOUNDS } from '../engine/sounds';
 import { TapTempo } from '../engine/tapTempo';
 import { clamp, clampBpm, type Subdivision } from '../engine/types';
 import { db } from '../db/db';
+import { BeatBlocks } from './BeatBlocks';
 
 const SIGNATURES: [number, 2 | 4 | 8 | 16][] = [
   [2, 4],
@@ -89,6 +90,115 @@ export function MetronomeScreen({ goToLibrary }: { goToLibrary: () => void }) {
     goToLibrary();
   };
 
+  const tapAccent = (i: number) => {
+    // read live state, not the render closure — rapid taps must each advance the cycle
+    const accents = [...useMetro.getState().config.accents];
+    accents[i] = cycleAccent(accents[i]);
+    update({ accents });
+  };
+
+  // ---------- full-screen setlist player ----------
+  if (activeSetlist) {
+    const song = activeSetlist.songs[activeSetlist.index];
+    const subLabel = SUBDIVISIONS.find((s) => s.value === config.subdivision)?.label ?? 'Beat';
+    const soundLabel = CLICK_SOUNDS.find((s) => s.id === config.sound)?.label ?? '';
+    return (
+      <div className="screen player">
+        <div ref={flashRef} className="flash-overlay" />
+        <div className="player-head">
+          <button
+            className="ghost"
+            aria-label="Exit setlist"
+            onClick={() => useMetro.getState().exitSetlist()}
+          >
+            ✕
+          </button>
+          <span className="title">{activeSetlist.name}</span>
+          <span className="meta">
+            {activeSetlist.index + 1} / {activeSetlist.songs.length}
+          </span>
+        </div>
+
+        <BeatBlocks accents={config.accents} activeBeat={activeBeat} onTap={tapAccent} />
+
+        <div className="player-song">
+          <div className="name">{song.name}</div>
+          <div className="pos">{tempoMarking(displayBpm)}</div>
+        </div>
+        <div className="bpm-display">
+          <div className="bpm">{displayBpm}</div>
+          <div className="label">BPM</div>
+        </div>
+
+        <div className="chips">
+          <div className="chip">
+            {config.signature.beats}/{config.signature.unit}
+            <span className="chip-label">Time</span>
+          </div>
+          <div className="chip">
+            {subLabel}
+            <span className="chip-label">Subdivision</span>
+          </div>
+          <div className="chip">
+            {soundLabel}
+            <span className="chip-label">Sound</span>
+          </div>
+        </div>
+
+        <div className="player-transport">
+          <button
+            aria-label="Previous song"
+            disabled={activeSetlist.index === 0}
+            onClick={() => useMetro.getState().setlistGo(-1)}
+          >
+            ⏮
+          </button>
+          <button
+            className={`big${running ? ' running' : ''}`}
+            aria-label={running ? 'Pause' : 'Play'}
+            onClick={toggle}
+          >
+            {running ? '⏸' : '▶'}
+          </button>
+          <button
+            aria-label="Next song"
+            disabled={activeSetlist.index === activeSetlist.songs.length - 1}
+            onClick={() => useMetro.getState().setlistGo(1)}
+          >
+            ⏭
+          </button>
+        </div>
+
+        <div className="card queue">
+          <div className="queue-head">Setlist</div>
+          {activeSetlist.songs.map((s, i) => {
+            const isCurrent = i === activeSetlist.index;
+            const qSub = SUBDIVISIONS.find((x) => x.value === s.subdivision)?.label;
+            const qSound = CLICK_SOUNDS.find((x) => x.id === s.sound)?.label;
+            return (
+              <button
+                key={`${s.id}-${i}`}
+                className={`queue-item${isCurrent ? ' current' : ''}`}
+                onClick={() => useMetro.getState().setlistGoTo(i)}
+                aria-label={`Play ${s.name}`}
+              >
+                <span className="queue-pos">{isCurrent ? '▶' : i + 1}</span>
+                <span className="queue-body">
+                  <span className="queue-name">{s.name}</span>
+                  <span className="meta">
+                    {s.bpm} BPM · {s.signature.beats}/{s.signature.unit}
+                    {s.subdivision > 1 && qSub ? ` · ${qSub}` : ''}
+                    {qSound ? ` · ${qSound}` : ''}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="screen">
       <div ref={flashRef} className="flash-overlay" />
@@ -107,70 +217,6 @@ export function MetronomeScreen({ goToLibrary }: { goToLibrary: () => void }) {
             </button>
           </div>
         </div>
-      ) : activeSetlist ? (
-        <>
-          <div className="card transport">
-            <div className="transport-info">
-              <div className="meta">
-                {activeSetlist.name} · {activeSetlist.index + 1}/{activeSetlist.songs.length}
-              </div>
-              <div>
-                <strong>{activeSetlist.songs[activeSetlist.index].name}</strong>
-              </div>
-            </div>
-            <div className="row" style={{ margin: 0 }}>
-              <button
-                aria-label="Previous song"
-                disabled={activeSetlist.index === 0}
-                onClick={() => useMetro.getState().setlistGo(-1)}
-              >
-                ⏮
-              </button>
-              <button aria-label={running ? 'Pause' : 'Play'} className="primary" onClick={toggle}>
-                {running ? '⏸' : '▶'}
-              </button>
-              <button
-                aria-label="Next song"
-                disabled={activeSetlist.index === activeSetlist.songs.length - 1}
-                onClick={() => useMetro.getState().setlistGo(1)}
-              >
-                ⏭
-              </button>
-              <button
-                className="ghost"
-                aria-label="Exit setlist"
-                onClick={() => useMetro.getState().exitSetlist()}
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-          <div className="card queue">
-            {activeSetlist.songs.map((song, i) => {
-              const isCurrent = i === activeSetlist.index;
-              const subLabel = SUBDIVISIONS.find((s) => s.value === song.subdivision)?.label;
-              const soundLabel = CLICK_SOUNDS.find((s) => s.id === song.sound)?.label;
-              return (
-                <button
-                  key={`${song.id}-${i}`}
-                  className={`queue-item${isCurrent ? ' current' : ''}`}
-                  onClick={() => useMetro.getState().setlistGoTo(i)}
-                  aria-label={`Play ${song.name}`}
-                >
-                  <span className="queue-pos">{isCurrent ? '▶' : i + 1}</span>
-                  <span className="queue-body">
-                    <span className="queue-name">{song.name}</span>
-                    <span className="meta">
-                      {song.bpm} BPM · {song.signature.beats}/{song.signature.unit}
-                      {song.subdivision > 1 && subLabel ? ` · ${subLabel}` : ''}
-                      {soundLabel ? ` · ${soundLabel}` : ''}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </>
       ) : (
         loadedSongName && (
           <div className="sub" style={{ textAlign: 'center' }}>
@@ -179,6 +225,7 @@ export function MetronomeScreen({ goToLibrary }: { goToLibrary: () => void }) {
         )
       )}
       <div className="bpm-display">
+        <div className="marking">{tempoMarking(displayBpm)}</div>
         <div className="bpm">{displayBpm}</div>
         <div className="label">BPM</div>
       </div>
@@ -207,25 +254,9 @@ export function MetronomeScreen({ goToLibrary }: { goToLibrary: () => void }) {
         <button onClick={() => setBpm(config.bpm + 5)}>+5</button>
       </div>
 
-      <div className="beats" aria-label="Beat accents — tap a beat to change its accent">
-        {config.accents.map((accent, i) => (
-          <button
-            key={i}
-            className={`beat${activeBeat === i ? ' now' : ''}`}
-            data-accent={accent}
-            onClick={() => {
-              // read live state, not the render closure — rapid taps must each advance the cycle
-              const accents = [...useMetro.getState().config.accents];
-              accents[i] = cycleAccent(accents[i]);
-              update({ accents });
-            }}
-          >
-            {i + 1}
-          </button>
-        ))}
-      </div>
+      <BeatBlocks accents={config.accents} activeBeat={activeBeat} onTap={tapAccent} />
       <div className="muted-note" style={{ textAlign: 'center' }}>
-        Tap a beat: normal → accent 1 → 2 → 3 → silent
+        Tap a beat to change its accent — full block is loudest, empty is silent
       </div>
 
       <button className={`start-btn${running ? ' running' : ''}`} onClick={toggle}>
