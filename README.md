@@ -51,8 +51,11 @@ iPhone/Android and runs offline.
 - `src/state/` — zustand stores bridging the engine singleton and React.
 - `src/ui/` — the five screens.
 
-Platform notes: LED/torch flash was deliberately left out (driver latency makes it lag the
-beat; strobing is also a photosensitivity hazard). Reminders use the Notification API and
+Platform notes: on iOS the ring/silent switch normally mutes Web Audio — while running,
+the engine loops a tiny silent `<audio>` element so the page counts as music playback and
+clicks stay audible on silent, like native metronome apps. LED/torch flash was
+deliberately left out (driver latency makes it lag the beat; strobing is also a
+photosensitivity hazard). Reminders use the Notification API and
 are best-effort on web — they become fully reliable if the app is later wrapped natively
 (Capacitor), which the engine/data layers were structured to allow.
 

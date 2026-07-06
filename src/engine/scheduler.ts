@@ -15,6 +15,14 @@ export interface BeatEvent {
 const LOOKAHEAD_S = 0.12; // how far ahead clicks are scheduled on the audio clock
 const TICK_MS = 25; // how often the worker asks us to top up the schedule
 
+/** iOS mutes Web Audio when the ring/silent switch is on silent — unless the
+ *  page is also playing an HTML media element, which reclassifies it as music
+ *  playback (like Spotify) that the switch doesn't mute. We loop this tiny
+ *  silent WAV while the metronome runs so clicks stay audible on silent,
+ *  matching how native metronome apps behave. Harmless on other platforms. */
+const SILENT_WAV =
+  'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YSADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+
 /** The timer lives in a Web Worker because main-thread timers are throttled in
  *  background tabs; actual click timing always comes from the AudioContext clock,
  *  the worker only wakes us to top up the schedule (lookahead pattern). */
@@ -30,6 +38,7 @@ export class Metronome {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private worker: Worker | null = null;
+  private silentMedia: HTMLAudioElement | null = null;
   private config: MetronomeConfig = defaultConfig();
   private pos: Position = { bar: 0, beat: 0, sub: 0 };
   private nextNoteTime = 0;
@@ -75,6 +84,17 @@ export class Metronome {
     if (this.running) return;
     const ctx = this.ensureAudio();
     if (ctx.state === 'suspended') await ctx.resume();
+    // keep iOS from muting clicks when the ring/silent switch is on silent
+    if (typeof Audio !== 'undefined') {
+      if (!this.silentMedia) {
+        this.silentMedia = new Audio(SILENT_WAV);
+        this.silentMedia.loop = true;
+        this.silentMedia.setAttribute('playsinline', '');
+      }
+      this.silentMedia.play().catch(() => {
+        // autoplay refusal just means no silent-switch override — clicks still work
+      });
+    }
     this.pos = { bar: 0, beat: 0, sub: 0 };
     this.nextNoteTime = ctx.currentTime + 0.06;
     this.startTime = this.nextNoteTime;
@@ -95,6 +115,7 @@ export class Metronome {
   stop(): void {
     if (!this.running) return;
     this.running = false;
+    this.silentMedia?.pause();
     this.worker?.postMessage({ cmd: 'stop' });
     if (this.stopTimer) clearTimeout(this.stopTimer);
     this.stopTimer = null;
