@@ -61,7 +61,7 @@ export default function App() {
 
   return (
     <div className="app">
-      {tab === 'metronome' && <MetronomeScreen />}
+      {tab === 'metronome' && <MetronomeScreen goToLibrary={() => setTab('library')} />}
       {tab === 'library' && <LibraryScreen goToMetronome={() => setTab('metronome')} />}
       {tab === 'practice' && <PracticeScreen />}
       {tab === 'tuner' && <TunerScreen />}

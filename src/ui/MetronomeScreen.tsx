@@ -5,6 +5,7 @@ import { cycleAccent } from '../engine/patterns';
 import { CLICK_SOUNDS } from '../engine/sounds';
 import { TapTempo } from '../engine/tapTempo';
 import { clamp, clampBpm, type Subdivision } from '../engine/types';
+import { db } from '../db/db';
 
 const SIGNATURES: [number, 2 | 4 | 8 | 16][] = [
   [2, 4],
@@ -26,8 +27,8 @@ const SUBDIVISIONS: { value: Subdivision; label: string }[] = [
 
 const tapper = new TapTempo();
 
-export function MetronomeScreen() {
-  const { config, running, loadedSongName, update, setSignature, toggle } = useMetro();
+export function MetronomeScreen({ goToLibrary }: { goToLibrary: () => void }) {
+  const { config, running, loadedSongName, songDraft, update, setSignature, toggle } = useMetro();
   const screenFlash = useSettings((s) => s.screenFlash);
   const [activeBeat, setActiveBeat] = useState<number | null>(null);
   const [liveBpm, setLiveBpm] = useState<number | null>(null);
@@ -61,13 +62,56 @@ export function MetronomeScreen() {
     ([b, u]) => b === config.signature.beats && u === config.signature.unit,
   );
 
+  const saveDraft = async () => {
+    if (!songDraft) return;
+    const cfg = useMetro.getState().config;
+    const payload = {
+      name: songDraft.name,
+      bpm: cfg.bpm,
+      signature: cfg.signature,
+      subdivision: cfg.subdivision,
+      accents: cfg.accents,
+      sound: cfg.sound,
+      createdAt: Date.now(),
+    };
+    if (songDraft.mode === 'edit' && songDraft.id !== undefined) {
+      await db.songs.update(songDraft.id, payload);
+    } else {
+      await db.songs.add(payload);
+    }
+    useMetro.getState().clearSongDraft();
+    goToLibrary();
+  };
+
+  const cancelDraft = () => {
+    useMetro.getState().cancelSongDraft();
+    goToLibrary();
+  };
+
   return (
     <div className="screen">
       <div ref={flashRef} className="flash-overlay" />
-      {loadedSongName && (
-        <div className="sub" style={{ textAlign: 'center' }}>
-          ♪ {loadedSongName}
+      {songDraft ? (
+        <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>
+            {songDraft.mode === 'create' ? 'New song: ' : 'Editing: '}
+            <strong>{songDraft.name}</strong>
+          </span>
+          <div className="row" style={{ margin: 0 }}>
+            <button className="ghost" onClick={cancelDraft}>
+              Cancel
+            </button>
+            <button className="primary" onClick={() => void saveDraft()}>
+              Save song
+            </button>
+          </div>
         </div>
+      ) : (
+        loadedSongName && (
+          <div className="sub" style={{ textAlign: 'center' }}>
+            ♪ {loadedSongName}
+          </div>
+        )
       )}
       <div className="bpm-display">
         <div className="bpm">{displayBpm}</div>

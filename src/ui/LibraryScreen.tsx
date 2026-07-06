@@ -9,7 +9,7 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const { config, update, setLoadedSong } = useMetro();
+  const { update, setLoadedSong, beginNewSong, beginEditSong } = useMetro();
 
   const refresh = async () => {
     setSongs(await db.songs.orderBy('name').toArray());
@@ -19,20 +19,16 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
     void refresh();
   }, []);
 
-  const saveCurrent = async () => {
+  const newSong = () => {
     const name = prompt('Song name?');
     if (!name?.trim()) return;
-    await db.songs.add({
-      name: name.trim(),
-      bpm: config.bpm,
-      signature: config.signature,
-      subdivision: config.subdivision,
-      accents: config.accents,
-      sound: config.sound,
-      createdAt: Date.now(),
-    });
-    await refresh();
-    setStatus(`Saved “${name.trim()}”.`);
+    beginNewSong(name.trim());
+    goToMetronome();
+  };
+
+  const editSong = (song: Song) => {
+    beginEditSong(song);
+    goToMetronome();
   };
 
   const loadSong = (song: Song) => {
@@ -114,8 +110,8 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
     <div className="screen">
       <h2 className="screen-title">Library</h2>
       <div className="row" style={{ justifyContent: 'flex-start' }}>
-        <button className="primary" onClick={saveCurrent}>
-          Save current settings as song
+        <button className="primary" onClick={newSong}>
+          + New song
         </button>
         <button onClick={createSetlist}>New setlist</button>
         <button onClick={doExport}>Export</button>
@@ -141,7 +137,7 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
         onChange={(e) => setQuery(e.target.value)}
       />
 
-      {filtered.length === 0 && <div className="sub">No songs yet. Dial in the metronome, then save it here.</div>}
+      {filtered.length === 0 && <div className="sub">No songs yet. Tap “+ New song” to create one.</div>}
       {filtered.map((song) => (
         <div className="list-item" key={song.id}>
           <div>
@@ -154,6 +150,7 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
             <button className="primary" onClick={() => loadSong(song)}>
               Load
             </button>
+            <button onClick={() => editSong(song)}>Edit</button>
             <button onClick={() => void addToSetlist(song)}>+ Setlist</button>
             <button className="ghost" onClick={() => void deleteSong(song)}>
               ✕
