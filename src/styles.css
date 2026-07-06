@@ -309,6 +309,56 @@ label.toggle {
   min-width: 0;
 }
 
+/* setlist queue (now-playing track list) */
+.queue {
+  padding: 6px;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.queue-item.current {
+  background: var(--accent-soft);
+}
+
+.queue-item.current .queue-name {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.queue-pos {
+  width: 22px;
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.queue-item.current .queue-pos {
+  color: var(--accent);
+}
+
+.queue-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.queue-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* drag-to-reorder handle */
 .drag-handle {
   touch-action: none; /* the handle drags the row, never scrolls the page */

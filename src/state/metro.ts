@@ -51,6 +51,7 @@ interface MetroState {
   cancelSongDraft: () => void;
   clearSongDraft: () => void;
   playSetlist: (name: string, songs: Song[], index: number) => void;
+  setlistGoTo: (index: number) => void;
   setlistGo: (delta: -1 | 1) => void;
   exitSetlist: () => void;
   start: () => void;
@@ -103,17 +104,19 @@ export const useMetro = create<MetroState>((set, get) => ({
     set({ activeSetlist: { name, songs, index: i }, songDraft: null });
     void metronome.start();
   },
-  setlistGo: (delta) => {
+  setlistGoTo: (index) => {
     const sl = get().activeSetlist;
-    if (!sl) return;
-    const i = sl.index + delta;
-    if (i < 0 || i >= sl.songs.length) return;
+    if (!sl || index < 0 || index >= sl.songs.length || index === sl.index) return;
     const wasRunning = get().running;
     if (wasRunning) get().stop();
-    get().applySong(sl.songs[i]);
-    set({ activeSetlist: { ...sl, index: i } });
+    get().applySong(sl.songs[index]);
+    set({ activeSetlist: { ...sl, index } });
     // restart so the new song begins on beat 1 rather than mid-bar
     if (wasRunning) void metronome.start();
+  },
+  setlistGo: (delta) => {
+    const sl = get().activeSetlist;
+    if (sl) get().setlistGoTo(sl.index + delta);
   },
   exitSetlist: () => set({ activeSetlist: null }),
   start: () => void metronome.start(),

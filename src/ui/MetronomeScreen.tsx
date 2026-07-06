@@ -108,42 +108,69 @@ export function MetronomeScreen({ goToLibrary }: { goToLibrary: () => void }) {
           </div>
         </div>
       ) : activeSetlist ? (
-        <div className="card transport">
-          <div className="transport-info">
-            <div className="meta">
-              {activeSetlist.name} · {activeSetlist.index + 1}/{activeSetlist.songs.length}
+        <>
+          <div className="card transport">
+            <div className="transport-info">
+              <div className="meta">
+                {activeSetlist.name} · {activeSetlist.index + 1}/{activeSetlist.songs.length}
+              </div>
+              <div>
+                <strong>{activeSetlist.songs[activeSetlist.index].name}</strong>
+              </div>
             </div>
-            <div>
-              <strong>{activeSetlist.songs[activeSetlist.index].name}</strong>
+            <div className="row" style={{ margin: 0 }}>
+              <button
+                aria-label="Previous song"
+                disabled={activeSetlist.index === 0}
+                onClick={() => useMetro.getState().setlistGo(-1)}
+              >
+                ⏮
+              </button>
+              <button aria-label={running ? 'Pause' : 'Play'} className="primary" onClick={toggle}>
+                {running ? '⏸' : '▶'}
+              </button>
+              <button
+                aria-label="Next song"
+                disabled={activeSetlist.index === activeSetlist.songs.length - 1}
+                onClick={() => useMetro.getState().setlistGo(1)}
+              >
+                ⏭
+              </button>
+              <button
+                className="ghost"
+                aria-label="Exit setlist"
+                onClick={() => useMetro.getState().exitSetlist()}
+              >
+                ✕
+              </button>
             </div>
           </div>
-          <div className="row" style={{ margin: 0 }}>
-            <button
-              aria-label="Previous song"
-              disabled={activeSetlist.index === 0}
-              onClick={() => useMetro.getState().setlistGo(-1)}
-            >
-              ⏮
-            </button>
-            <button aria-label={running ? 'Pause' : 'Play'} className="primary" onClick={toggle}>
-              {running ? '⏸' : '▶'}
-            </button>
-            <button
-              aria-label="Next song"
-              disabled={activeSetlist.index === activeSetlist.songs.length - 1}
-              onClick={() => useMetro.getState().setlistGo(1)}
-            >
-              ⏭
-            </button>
-            <button
-              className="ghost"
-              aria-label="Exit setlist"
-              onClick={() => useMetro.getState().exitSetlist()}
-            >
-              ✕
-            </button>
+          <div className="card queue">
+            {activeSetlist.songs.map((song, i) => {
+              const isCurrent = i === activeSetlist.index;
+              const subLabel = SUBDIVISIONS.find((s) => s.value === song.subdivision)?.label;
+              const soundLabel = CLICK_SOUNDS.find((s) => s.id === song.sound)?.label;
+              return (
+                <button
+                  key={`${song.id}-${i}`}
+                  className={`queue-item${isCurrent ? ' current' : ''}`}
+                  onClick={() => useMetro.getState().setlistGoTo(i)}
+                  aria-label={`Play ${song.name}`}
+                >
+                  <span className="queue-pos">{isCurrent ? '▶' : i + 1}</span>
+                  <span className="queue-body">
+                    <span className="queue-name">{song.name}</span>
+                    <span className="meta">
+                      {song.bpm} BPM · {song.signature.beats}/{song.signature.unit}
+                      {song.subdivision > 1 && subLabel ? ` · ${subLabel}` : ''}
+                      {soundLabel ? ` · ${soundLabel}` : ''}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        </div>
+        </>
       ) : (
         loadedSongName && (
           <div className="sub" style={{ textAlign: 'center' }}>
