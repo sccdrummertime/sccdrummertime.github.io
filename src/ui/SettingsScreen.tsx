@@ -1,5 +1,91 @@
+import { useEffect, useRef, useState } from 'react';
 import { useMetro } from '../state/metro';
 import { useSettings } from '../state/settings';
+import { exportLibrary, importLibrary } from '../db/transfer';
+import { requestPersistentStorage, storageState, type PersistState } from '../db/storage';
+
+function DataCard() {
+  const [persist, setPersist] = useState<PersistState>('unsupported');
+  const [status, setStatus] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    void storageState().then(setPersist);
+  }, []);
+
+  const backup = async () => {
+    const json = await exportLibrary();
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.download = `open-metronome-backup-${stamp}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    setStatus('Backup file downloaded — keep it somewhere safe.');
+  };
+
+  const restore = async (file: File) => {
+    try {
+      const r = await importLibrary(await file.text());
+      setStatus(
+        `Restored ${r.songs} song(s), ${r.setlists} setlist(s).` +
+          (r.skipped ? ` Skipped ${r.skipped} invalid.` : ''),
+      );
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Restore failed.');
+    }
+  };
+
+  const enablePersist = async () => {
+    setPersist(await requestPersistentStorage());
+  };
+
+  return (
+    <div className="card">
+      <h3>Your data &amp; backup</h3>
+      <div className="sub">
+        Songs, setlists, and practice history are saved on this device only. New app updates
+        never erase them.
+      </div>
+
+      <div className="row spread" style={{ marginTop: 10 }}>
+        <span className="sub">
+          Storage:{' '}
+          {persist === 'persisted'
+            ? '🔒 Protected from automatic cleanup'
+            : persist === 'best-effort'
+              ? '⚠ Not yet protected'
+              : '—'}
+        </span>
+        {persist === 'best-effort' && <button onClick={() => void enablePersist()}>Protect</button>}
+      </div>
+
+      <div className="row" style={{ justifyContent: 'flex-start', marginTop: 8 }}>
+        <button className="primary" onClick={() => void backup()}>
+          Download backup
+        </button>
+        <button onClick={() => fileRef.current?.click()}>Restore from backup</button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void restore(f);
+            e.target.value = '';
+          }}
+        />
+      </div>
+      {status && <div className="muted-note">{status}</div>}
+      <div className="muted-note">
+        On iPhone/iPad, add the app to your Home Screen (Share → Add to Home Screen) — this keeps
+        your library from being auto-cleared, and download a backup now and then for safety.
+      </div>
+    </div>
+  );
+}
 
 export function SettingsScreen() {
   const s = useSettings();
@@ -52,6 +138,8 @@ export function SettingsScreen() {
           />
         </label>
       </div>
+
+      <DataCard />
 
       <div className="card">
         <h3>About</h3>

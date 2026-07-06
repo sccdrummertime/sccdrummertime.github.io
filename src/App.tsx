@@ -6,6 +6,7 @@ import { TunerScreen } from './ui/TunerScreen';
 import { SettingsScreen } from './ui/SettingsScreen';
 import { useSettings } from './state/settings';
 import { initTracker } from './features/practice/tracker';
+import { requestPersistentStorage } from './db/storage';
 
 type Tab = 'metronome' | 'library' | 'practice' | 'tuner' | 'settings';
 
@@ -55,6 +56,8 @@ export default function App() {
 
   useEffect(() => {
     initTracker();
+    // opt our IndexedDB data out of automatic browser eviction (best-effort)
+    void requestPersistentStorage();
   }, []);
 
   useReminderClock();
