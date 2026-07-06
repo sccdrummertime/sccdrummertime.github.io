@@ -2,7 +2,12 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// GitHub Pages serves project sites from /<repo-name>/, not /. Dev server and any
+// other host (Netlify, a custom domain) stay at root.
+const base = process.env.GITHUB_PAGES ? '/open-metronome/' : '/';
+
 export default defineConfig({
+  base,
   plugins: [
     react(),
     VitePWA({
