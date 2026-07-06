@@ -79,6 +79,21 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
     }
   };
 
+  const moveInSetlist = async (sl: Setlist, index: number, delta: -1 | 1) => {
+    const target = index + delta;
+    if (target < 0 || target >= sl.songIds.length) return;
+    const songIds = [...sl.songIds];
+    [songIds[index], songIds[target]] = [songIds[target], songIds[index]];
+    await db.setlists.update(sl.id!, { songIds });
+    await refresh();
+  };
+
+  const removeFromSetlist = async (sl: Setlist, index: number) => {
+    const songIds = sl.songIds.filter((_, i) => i !== index);
+    await db.setlists.update(sl.id!, { songIds });
+    await refresh();
+  };
+
   const doExport = async () => {
     const json = await exportLibrary();
     const blob = new Blob([json], { type: 'application/json' });
@@ -111,7 +126,7 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
       <h2 className="screen-title">Library</h2>
       <div className="row" style={{ justifyContent: 'flex-start' }}>
         <button className="primary" onClick={newSong}>
-          + New song
+          + Add new song
         </button>
         <button onClick={createSetlist}>New setlist</button>
         <button onClick={doExport}>Export</button>
@@ -185,11 +200,34 @@ export function LibraryScreen({ goToMetronome }: { goToMetronome: () => void }) 
                 const song = songById.get(id);
                 if (!song) return null;
                 return (
-                  <div className="list-item" key={id}>
+                  <div className="list-item" key={`${id}-${i}`}>
                     <div>
                       {i + 1}. {song.name} <span className="meta">{song.bpm} BPM</span>
                     </div>
-                    <button onClick={() => loadSong(song)}>Load</button>
+                    <div className="row" style={{ margin: 0 }}>
+                      <button
+                        aria-label={`Move ${song.name} up`}
+                        disabled={i === 0}
+                        onClick={() => void moveInSetlist(sl, i, -1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        aria-label={`Move ${song.name} down`}
+                        disabled={i === sl.songIds.length - 1}
+                        onClick={() => void moveInSetlist(sl, i, 1)}
+                      >
+                        ↓
+                      </button>
+                      <button onClick={() => loadSong(song)}>Load</button>
+                      <button
+                        className="ghost"
+                        aria-label={`Remove ${song.name} from ${sl.name}`}
+                        onClick={() => void removeFromSetlist(sl, i)}
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </div>
                 );
               })}
