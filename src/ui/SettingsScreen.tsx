@@ -148,6 +148,7 @@ export function SettingsScreen() {
           unlimited songs and setlists — is available to everyone. Your data never leaves this
           device: no account, no cloud, no ads, no subscriptions.
         </div>
+        <div className="muted-note">Build {__BUILD_ID__}</div>
       </div>
     </div>
   );

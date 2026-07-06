@@ -1,10 +1,21 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { execSync } from 'node:child_process';
+
+// Stamp each build with the exact git commit so the running app is identifiable
+// (Settings → About + console). Ends "is my phone on the old cached build?" guessing.
+let buildId = 'dev';
+try {
+  buildId = execSync('git rev-parse --short HEAD').toString().trim();
+} catch {
+  // not a git checkout (e.g. tarball build) — leave 'dev'
+}
 
 // Served from the org's <org>.github.io user/org site, which is always root —
 // unlike a GitHub Pages *project* site (<user>.github.io/<repo>), no base path needed.
 export default defineConfig({
+  define: { __BUILD_ID__: JSON.stringify(buildId) },
   plugins: [
     react(),
     VitePWA({
