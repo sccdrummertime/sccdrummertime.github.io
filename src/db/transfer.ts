@@ -1,4 +1,4 @@
-import type { Setlist, Song } from './db';
+import type { Song } from './db';
 import { db } from './db';
 import type { AccentState, Subdivision } from '../engine/types';
 import { MAX_BPM, MIN_BPM } from '../engine/types';
