@@ -61,6 +61,7 @@ export class Metronome {
   private stopTimer: ReturnType<typeof setTimeout> | null = null;
   private queue: BeatEvent[] = [];
   private raf = 0;
+  private reviveInstalled = false;
   running = false;
 
   /** Fires on the animation frame closest to each audible click (for visual cues). */
@@ -91,7 +92,8 @@ export class Metronome {
    *  running, resume the context, restart the media route, and continue on the
    *  next beat. */
   private installReviveHandlers(): void {
-    if (typeof document === 'undefined') return;
+    if (this.reviveInstalled || typeof document === 'undefined') return;
+    this.reviveInstalled = true;
     const revive = () => {
       if (this.running) void this.reviveAudio();
     };
@@ -106,14 +108,59 @@ export class Metronome {
     });
   }
 
+  /** resume() on a wedged iOS context can stay pending FOREVER (the audio
+   *  session was taken by another app and never handed back to this page's
+   *  context). Never await it unbounded — race a deadline and report whether
+   *  the context actually came back. */
+  private async tryResume(ctx: AudioContext, timeoutMs = 400): Promise<boolean> {
+    if (ctx.state === 'running') return true;
+    await Promise.race([
+      ctx.resume().catch(() => {}),
+      new Promise<void>((res) => setTimeout(res, timeoutMs)),
+    ]);
+    return (ctx.state as string) === 'running';
+  }
+
+  /** Discard a wedged context entirely; ensureAudio() will build a fresh one
+   *  (a context created inside a user gesture always starts). */
+  private teardownAudio(): void {
+    try {
+      this.master?.disconnect();
+    } catch {
+      // already disconnected
+    }
+    void this.ctx?.close().catch(() => {});
+    this.ctx = null;
+    this.master = null;
+    this.mediaOut = null; // was bound to the dead context
+    this.silentLoop?.pause();
+    this.silentLoop = null;
+  }
+
+  /** Get a context that is genuinely running, rebuilding from scratch if the
+   *  current one is wedged. Returns null only when even a fresh context can't
+   *  start (no user gesture available — the pointerdown revive will retry). */
+  private async ensureRunningContext(): Promise<AudioContext | null> {
+    let ctx = this.ensureAudio();
+    if (await this.tryResume(ctx)) return ctx;
+    this.teardownAudio();
+    ctx = this.ensureAudio();
+    this.silentLoop?.play().catch(() => this.useStreamingFallback());
+    if (await this.tryResume(ctx)) return ctx;
+    return null;
+  }
+
   private async reviveAudio(): Promise<void> {
     const ctx = this.ctx;
     if (!ctx) return;
     if (ctx.state !== 'running') {
-      try {
-        await ctx.resume();
-      } catch {
-        return; // no gesture available yet — the pointerdown handler will retry
+      if (!(await this.tryResume(ctx))) {
+        // wedged — rebuild everything and restart the beat if we were playing
+        const wasRunning = this.running;
+        if (wasRunning) this.stop();
+        this.teardownAudio();
+        if (wasRunning) await this.start();
+        return;
       }
     }
     if (this.silentLoop && this.silentLoop.paused) {
@@ -165,12 +212,15 @@ export class Metronome {
 
   async start(): Promise<void> {
     if (this.running) return;
-    const ctx = this.ensureAudio();
+    this.ensureAudio();
     // kick off media playback synchronously, while the user's tap still counts
     // as a gesture — an await first can void the autoplay permission
     this.silentLoop?.play().catch(() => this.useStreamingFallback());
     this.mediaOut?.play().catch(() => {});
-    if (ctx.state === 'suspended') await ctx.resume();
+    // never hangs: a wedged context (iOS took the audio session while we were
+    // backgrounded) is torn down and rebuilt instead of awaited forever
+    const ctx = await this.ensureRunningContext();
+    if (!ctx) return; // even a fresh context refused — next tap retries
     // pre-warm the output path with an inaudible one-shot so the first real
     // click isn't the sample that wakes the hardware
     if (this.master) {
