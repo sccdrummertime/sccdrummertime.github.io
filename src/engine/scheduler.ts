@@ -14,6 +14,11 @@ export interface BeatEvent {
 
 const LOOKAHEAD_S = 0.12; // how far ahead clicks are scheduled on the audio clock
 const TICK_MS = 25; // how often the worker asks us to top up the schedule
+/** Lead-in before beat 1. Longer than the lookahead on purpose: at Start the
+ *  hardware is still spinning up and (on iOS) the silent loop is flipping the
+ *  audio session to "playback" — a click rendered inside that window gets
+ *  mangled. 150ms is imperceptible to the user but clears the transition. */
+const START_DELAY_S = 0.15;
 
 /** iOS puts Web Audio in the "ambient" session, which the ring/silent switch
  *  mutes; HTML media playback ("playback" session) is never muted. Streaming
@@ -120,7 +125,7 @@ export class Metronome {
     // drop the stale backlog and pick up cleanly just ahead of the clock
     this.queue = [];
     if (this.nextNoteTime < ctx.currentTime) {
-      this.nextNoteTime = ctx.currentTime + 0.06;
+      this.nextNoteTime = ctx.currentTime + START_DELAY_S;
     }
     this.scheduleAhead();
   }
@@ -166,8 +171,16 @@ export class Metronome {
     this.silentLoop?.play().catch(() => this.useStreamingFallback());
     this.mediaOut?.play().catch(() => {});
     if (ctx.state === 'suspended') await ctx.resume();
+    // pre-warm the output path with an inaudible one-shot so the first real
+    // click isn't the sample that wakes the hardware
+    if (this.master) {
+      const warm = ctx.createBufferSource();
+      warm.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+      warm.connect(this.master);
+      warm.start(ctx.currentTime);
+    }
     this.pos = { bar: 0, beat: 0, sub: 0 };
-    this.nextNoteTime = ctx.currentTime + 0.06;
+    this.nextNoteTime = ctx.currentTime + START_DELAY_S;
     this.startTime = this.nextNoteTime;
     this.queue = [];
     this.running = true;
