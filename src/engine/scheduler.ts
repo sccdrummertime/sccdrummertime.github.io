@@ -16,11 +16,15 @@ const LOOKAHEAD_S = 0.12; // how far ahead clicks are scheduled on the audio clo
 const TICK_MS = 25; // how often the worker asks us to top up the schedule
 
 /** iOS puts Web Audio in the "ambient" session, which the ring/silent switch
- *  mutes. HTML media playback ("playback" session) is never muted — so on iOS
- *  the master bus is routed through a MediaStream into a hidden <audio>
- *  element: the clicks themselves become media playback, exactly like a music
- *  app, and stay audible on silent. Everywhere else audio goes straight to the
- *  context destination. */
+ *  mutes; HTML media playback ("playback" session) is never muted. Streaming
+ *  the clicks *through* a media element beats the switch but glitches audibly
+ *  (start-up buffer warm-up, intermittent underrun bursts, and pitch bend from
+ *  the element's clock-drift correction). So instead: clicks always go straight
+ *  to the context destination, and on iOS a genuinely silent AAC file loops in
+ *  an <audio> element alongside — that alone flips the session to "playback"
+ *  and unmutes Web Audio (a data-URI WAV does NOT work here; iOS refuses to
+ *  play it, which is why the earlier attempt failed). If the loop can't play,
+ *  we fall back to the streaming route: glitchy beats muted. */
 function isIOS(): boolean {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
@@ -43,8 +47,8 @@ export class Metronome {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private worker: Worker | null = null;
-  private mediaOut: HTMLAudioElement | null = null;
-  private directConnected = false;
+  private silentLoop: HTMLAudioElement | null = null; // iOS silent-switch override
+  private mediaOut: HTMLAudioElement | null = null; // fallback streaming route
   private config: MetronomeConfig = defaultConfig();
   private pos: Position = { bar: 0, beat: 0, sub: 0 };
   private nextNoteTime = 0;
@@ -107,6 +111,9 @@ export class Metronome {
         return; // no gesture available yet — the pointerdown handler will retry
       }
     }
+    if (this.silentLoop && this.silentLoop.paused) {
+      this.silentLoop.play().catch(() => {});
+    }
     if (this.mediaOut && this.mediaOut.paused) {
       this.mediaOut.play().catch(() => {});
     }
@@ -124,18 +131,31 @@ export class Metronome {
       this.installReviveHandlers();
       this.master = this.ctx.createGain();
       this.master.gain.value = this.config.volume;
-      if (isIOS() && typeof Audio !== 'undefined' && this.ctx.createMediaStreamDestination) {
-        const dest = this.ctx.createMediaStreamDestination();
-        this.master.connect(dest);
-        this.mediaOut = new Audio();
-        this.mediaOut.srcObject = dest.stream;
-        this.mediaOut.setAttribute('playsinline', '');
-      } else {
-        this.master.connect(this.ctx.destination);
-        this.directConnected = true;
+      // clicks always play direct — glitch-free, sample-accurate
+      this.master.connect(this.ctx.destination);
+      if (isIOS() && typeof Audio !== 'undefined') {
+        this.silentLoop = new Audio('/silence.m4a');
+        this.silentLoop.loop = true;
+        this.silentLoop.setAttribute('playsinline', '');
+        this.silentLoop.addEventListener('error', () => this.useStreamingFallback());
       }
     }
     return this.ctx;
+  }
+
+  /** Last resort when the silent loop can't play: stream the clicks through a
+   *  media element after all — glitchy on iOS, but audible on silent. */
+  private useStreamingFallback(): void {
+    if (this.mediaOut || !this.ctx || !this.master || !this.ctx.createMediaStreamDestination) {
+      return;
+    }
+    const dest = this.ctx.createMediaStreamDestination();
+    this.master.disconnect();
+    this.master.connect(dest);
+    this.mediaOut = new Audio();
+    this.mediaOut.srcObject = dest.stream;
+    this.mediaOut.setAttribute('playsinline', '');
+    if (this.running) this.mediaOut.play().catch(() => {});
   }
 
   async start(): Promise<void> {
@@ -143,14 +163,8 @@ export class Metronome {
     const ctx = this.ensureAudio();
     // kick off media playback synchronously, while the user's tap still counts
     // as a gesture — an await first can void the autoplay permission
-    this.mediaOut?.play().catch(() => {
-      // media route refused: fall back to direct output so clicks still sound
-      // (loses only the silent-switch override)
-      if (!this.directConnected && this.master && this.ctx) {
-        this.master.connect(this.ctx.destination);
-        this.directConnected = true;
-      }
-    });
+    this.silentLoop?.play().catch(() => this.useStreamingFallback());
+    this.mediaOut?.play().catch(() => {});
     if (ctx.state === 'suspended') await ctx.resume();
     this.pos = { bar: 0, beat: 0, sub: 0 };
     this.nextNoteTime = ctx.currentTime + 0.06;
@@ -172,6 +186,7 @@ export class Metronome {
   stop(): void {
     if (!this.running) return;
     this.running = false;
+    this.silentLoop?.pause();
     this.mediaOut?.pause();
     this.worker?.postMessage({ cmd: 'stop' });
     if (this.stopTimer) clearTimeout(this.stopTimer);

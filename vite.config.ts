@@ -20,6 +20,8 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // include the iOS silent-switch loop file in the offline precache
+      workbox: { globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,m4a}'] },
       manifest: {
         name: 'Open Metronome',
         short_name: 'Metronome',
