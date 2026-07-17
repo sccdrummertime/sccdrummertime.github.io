@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMetro } from '../state/metro';
-import { useSettings } from '../state/settings';
+import { useSettings, THEMES } from '../state/settings';
 import { exportLibrary, importLibrary } from '../db/transfer';
 import { requestPersistentStorage, storageState, type PersistState } from '../db/storage';
 
@@ -96,15 +96,33 @@ export function SettingsScreen() {
       <h2 className="screen-title">Settings</h2>
 
       <div className="card">
+        <label className="toggle" style={{ alignItems: 'flex-start' }}>
+          <span>
+            <strong>Theme</strong>
+            <div className="sub">Pick your color</div>
+          </span>
+        </label>
+        <div className="theme-grid">
+          {THEMES.map((t) => (
+            <button
+              key={t.id}
+              className={`theme-swatch${s.theme === t.id ? ' active' : ''}`}
+              data-theme={t.id}
+              onClick={() => s.setTheme(t.id)}
+              aria-label={`${t.label} theme`}
+              aria-pressed={s.theme === t.id}
+            >
+              <span className="dot" />
+              {t.label}
+            </button>
+          ))}
+        </div>
         <label className="toggle">
           <span>
-            <strong>Dark theme</strong>
+            <strong>Keep screen awake</strong>
+            <div className="sub">Stops the display from sleeping while playing</div>
           </span>
-          <input
-            type="checkbox"
-            checked={s.theme === 'dark'}
-            onChange={(e) => s.setTheme(e.target.checked ? 'dark' : 'light')}
-          />
+          <input type="checkbox" checked={s.keepAwake} onChange={(e) => s.setKeepAwake(e.target.checked)} />
         </label>
         <label className="toggle">
           <span>

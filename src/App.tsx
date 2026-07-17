@@ -5,6 +5,7 @@ import { PracticeScreen } from './ui/PracticeScreen';
 import { TunerScreen } from './ui/TunerScreen';
 import { SettingsScreen } from './ui/SettingsScreen';
 import { useSettings } from './state/settings';
+import { useMetro } from './state/metro';
 import { initTracker } from './features/practice/tracker';
 import { requestPersistentStorage } from './db/storage';
 
@@ -46,9 +47,43 @@ function useReminderClock() {
   }, []);
 }
 
+/** Hold a Screen Wake Lock while `active` (metronome running + user opted in).
+ *  The lock is auto-released by the browser whenever the page is hidden, so we
+ *  re-acquire it every time the page becomes visible again. Best-effort: silently
+ *  no-ops where the API is unsupported (older iOS Safari) or the request is denied. */
+function useWakeLock(active: boolean) {
+  useEffect(() => {
+    if (!active || !('wakeLock' in navigator)) return;
+    let sentinel: WakeLockSentinel | null = null;
+    let cancelled = false;
+    const request = async () => {
+      if (cancelled || document.visibilityState !== 'visible') return;
+      try {
+        sentinel = await navigator.wakeLock.request('screen');
+      } catch {
+        // denied or transiently unavailable — a later visibility change retries
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void request();
+    };
+    void request();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      void sentinel?.release().catch(() => {});
+    };
+  }, [active]);
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>('metronome');
   const theme = useSettings((s) => s.theme);
+  const keepAwake = useSettings((s) => s.keepAwake);
+  const running = useMetro((s) => s.running);
+
+  useWakeLock(running && keepAwake);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
